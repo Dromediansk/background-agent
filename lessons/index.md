@@ -34,12 +34,13 @@ npm install
 cp .env.example .env
 ```
 
-Open [neon.new](https://neon.new/) and copy its **PostgreSQL connection string** into `.env`, along with your model key and model. Copy the database URL, not the claim URL:
+Open [neon.new](https://neon.new/) and copy its **PostgreSQL connection string** into `.env`, along with your Anthropic API key. Copy the database URL, not the claim URL:
 
 ```dotenv
 DATABASE_URL="postgresql://USER:PASSWORD@HOST/DB?sslmode=require"
-OPENAI_API_KEY=your-key
-OPENAI_MODEL=your-available-model
+ANTHROPIC_API_KEY=your-key
+# Optional; defaults to claude-opus-5-5
+# ANTHROPIC_MODEL=claude-opus-5-5
 ```
 
 Use your own URL and never commit `.env`. An unclaimed database is temporary. Claim it or make another for later VOD practice.

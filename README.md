@@ -27,8 +27,9 @@ Get a temporary PostgreSQL connection string from [neon.new](https://neon.new/) 
 
 ```dotenv
 DATABASE_URL="postgresql://USER:PASSWORD@HOST/DB?sslmode=require"
-OPENAI_API_KEY=your-key
-OPENAI_MODEL=your-available-model
+ANTHROPIC_API_KEY=your-key
+# Optional; defaults to claude-opus-5-5
+# ANTHROPIC_MODEL=claude-opus-5-5
 ```
 
 Do not commit `.env`. An unclaimed Neon database is temporary; claim it or make a new one for later practice.
@@ -47,7 +48,7 @@ Keep these commands running in **three separate terminals**:
 | 2 | `npm run dev` | Operator API, dashboard, and Inngest Dev Server |
 | 3 | `npm run dev:checkout` | Healthy checkout service; stop only this terminal to change faults |
 
-In a fourth terminal, `npm run docs` serves the lesson notes at http://127.0.0.1:5174. The operator app is at http://127.0.0.1:5173, and Inngest traces are at http://127.0.0.1:8288. Every agent run uses the configured OpenAI model. The agent startup line names the model, and http://127.0.0.1:3002/api/health reports it so you can check before teaching.
+In a fourth terminal, `npm run docs` serves the lesson notes at http://127.0.0.1:5174. The operator app is at http://127.0.0.1:5173, and Inngest traces are at http://127.0.0.1:8288. Every agent run uses the configured Claude model (`claude-opus-5-5` unless `ANTHROPIC_MODEL` is set). The agent startup line names the model, and http://127.0.0.1:3002/api/health reports it so you can check before teaching.
 
 If a startup command reports that its port is in use, stop the earlier workshop process in its terminal before starting another copy. The commands check their expected ports and fail instead of silently moving the dashboard or Inngest to another address.
 

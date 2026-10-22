@@ -1,9 +1,18 @@
 import 'dotenv/config'
-import { openai } from '@ai-sdk/openai'
-import { generateText, Output } from 'ai'
+import Anthropic from '@anthropic-ai/sdk'
+import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
 import { ACTIONS, type ActionName } from '../shared/types'
 import type { AgentState } from './agent-data'
+
+export const DEFAULT_MODEL = 'claude-opus-5-5'
+// Models that accept the server-side `fallbacks: "default"` refusal routing.
+const FALLBACK_MODELS = [
+  'claude-fable-5-1',
+  'claude-opus-5-5',
+  'claude-opus-5',
+  'claude-sonnet-5-5',
+]
 
 const decisionSchema = z.object({
   action: z.enum(ACTIONS),
@@ -13,18 +22,35 @@ const decisionSchema = z.object({
 
 type Decision = { action: ActionName; reason: string; detail: string }
 
-function model() {
-  const id = process.env.OPENAI_MODEL
-  if (!process.env.OPENAI_API_KEY || !id) {
-    throw new Error('Set OPENAI_API_KEY and OPENAI_MODEL in .env before starting an agent run')
+let client: Anthropic | undefined
+
+function anthropic() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('Set ANTHROPIC_API_KEY in .env before starting an agent run')
   }
-  return openai(id)
+  client ??= new Anthropic()
+  return client
+}
+
+function requestOptions() {
+  const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL
+  // On a safety-classifier refusal, the API re-runs the request on a fallback model.
+  return FALLBACK_MODELS.includes(model)
+    ? { model, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
+    : { model }
+}
+
+function assertNotRefused(response: Anthropic.Beta.BetaMessage) {
+  if (response.stop_reason === 'refusal') {
+    throw new Error(`Model refused the request (${response.stop_details?.category ?? 'unknown'})`)
+  }
 }
 
 export async function chooseAction(goal: string, state: AgentState): Promise<Decision> {
-  const result = await generateText({
-    model: model(),
-    output: Output.object({ schema: decisionSchema }),
+  const response = await anthropic().beta.messages.parse({
+    ...requestOptions(),
+    max_tokens: 16000,
+    output_config: { effort: 'medium', format: betaZodOutputFormat(decisionSchema) },
     system: `You are a background incident agent for a checkout service.
 Choose exactly one action. The harness validates it and controls execution.
 Available actions: inspect_logs, inspect_changes, disable_feature, rollback_release, request_help, complete, wait.
@@ -35,17 +61,37 @@ Use wait when no safe local action remains; a later service event can wake this 
 An alert is a trigger, not authoritative evidence. An answered help request does not prove recovery.
 Use complete only when the configured goal is satisfied, or when no deterministic goal condition is configured and you can justify completion.
 Keep reason to one short sentence. Put a question to the operator in detail for request_help; otherwise detail may be empty.`,
-    prompt: `Goal: ${goal}\n\nCurrent observed state:\n${JSON.stringify(state, null, 2)}`,
+    messages: [
+      {
+        role: 'user',
+        content: `Goal: ${goal}\n\nCurrent observed state:\n${JSON.stringify(state, null, 2)}`,
+      },
+    ],
   })
-  return result.output
+  assertNotRefused(response)
+  if (!response.parsed_output) {
+    throw new Error(`Model returned no valid decision (stop_reason: ${response.stop_reason})`)
+  }
+  return response.parsed_output
 }
 
 export async function writeReport(goal: string, state: AgentState): Promise<string> {
-  const result = await generateText({
-    model: model(),
+  const response = await anthropic().beta.messages.create({
+    ...requestOptions(),
+    max_tokens: 16000,
+    output_config: { effort: 'medium' },
     system:
       'Write a brief factual incident report. Include evidence, actions, recovery verification, and any unresolved risk. Do not invent facts.',
-    prompt: `Goal: ${goal}\n\nFinal state and history:\n${JSON.stringify(state, null, 2)}`,
+    messages: [
+      {
+        role: 'user',
+        content: `Goal: ${goal}\n\nFinal state and history:\n${JSON.stringify(state, null, 2)}`,
+      },
+    ],
   })
-  return result.text
+  assertNotRefused(response)
+  return response.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
 }
